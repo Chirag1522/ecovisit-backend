@@ -48,7 +48,7 @@ def predict(city: str):
 
     try:
         response = client.chat.completions.create(
-            model="qwen-2.5-coder-32b",
+            model="meta-llama/llama-4-maverick-17b-128e-instruct",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
             max_tokens=1000
