@@ -4,14 +4,13 @@ from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 import json
 import os
-import re
 from dotenv import load_dotenv
 from openai import OpenAI
 
 # Load environment variables
 load_dotenv()
 
-# Initialize Groq OpenAI client
+# Create OpenAI client for Groq
 client = OpenAI(
     api_key=os.getenv("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
@@ -19,7 +18,7 @@ client = OpenAI(
 
 app = FastAPI()
 
-# CORS setup
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,38 +34,35 @@ def predict(city: str):
 
     start_date = datetime.now().date()
     future_dates = [start_date + timedelta(days=i) for i in range(7)]
+    formatted_dates = [date.strftime("%Y-%m-%d") for date in future_dates]
 
     prompt = (
-        f"Predict the Air Quality Index (AQI) for {city} for the next 7 days starting from {start_date}.\n"
-        f"Return a valid JSON list of exactly 7 objects with the following keys:\n"
-        f" - 'ds': date (YYYY-MM-DD)\n"
-        f" - 'yhat': predicted AQI (integer 0 to 500)\n"
-        f" - 'yhat_lower': lower bound\n"
-        f" - 'yhat_upper': upper bound\n"
-        f"Example:\n"
-        f"[{{'ds': '2025-04-14', 'yhat': 92, 'yhat_lower': 80, 'yhat_upper': 105}}, ...]\n"
-        f"Only return valid JSON, no extra explanation or comments."
+        f"Provide a JSON array of 7 objects, each predicting AQI for {city} from {formatted_dates[0]} to {formatted_dates[-1]}.\n"
+        f"Each object should have:\n"
+        f"  - 'ds': date (YYYY-MM-DD)\n"
+        f"  - 'yhat': predicted AQI (0-500)\n"
+        f"  - 'yhat_lower': lower bound\n"
+        f"  - 'yhat_upper': upper bound\n\n"
+        f"Strictly return only a valid JSON array. No comments or explanations."
     )
 
     try:
         response = client.chat.completions.create(
-            model="meta-llama/llama-4-maverick-17b-128e-instruct",
+            model="llama3-70b-8192",  # Meta's LLaMA3 70B Instruct
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.4,
-            max_tokens=1000
+            temperature=0.3,
+            max_tokens=1024
         )
 
         content = response.choices[0].message.content.strip()
         print("Raw response from Groq:", content)
 
-        # Try to extract JSON array from the response
-        json_str = re.search(r".*", content, re.DOTALL).group()
-        predictions = json.loads(json_str)
+        predictions = json.loads(content)
 
         if not isinstance(predictions, list) or len(predictions) != 7:
             return JSONResponse(
                 status_code=422,
-                content={"error": "Invalid response format from Groq", "raw": content}
+                content={"error": "Invalid response format from AI", "raw": content}
             )
 
         return {
@@ -77,7 +73,7 @@ def predict(city: str):
     except json.JSONDecodeError as e:
         return JSONResponse(
             status_code=500,
-            content={"error": "JSON parsing failed", "details": str(e), "raw": content}
+            content={"error": "Invalid JSON received from Groq", "details": str(e), "raw": content}
         )
     except Exception as e:
         return JSONResponse(
